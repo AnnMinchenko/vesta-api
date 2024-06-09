@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using vesta_api.Database.Context;
 using vesta_api.Database.Models;
+using vesta_api.Database.Models.View;
+using vesta_api.Database.Models.View.Requests;
+using vesta_api.Database.Models.View.Responses;
 
 namespace vesta_api.Controllers
 {
@@ -12,10 +15,7 @@ namespace vesta_api.Controllers
     [Authorize]
     public class ClientsController(VestaContext context) : ControllerBase
     {
-        // GET: api/Clients
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [HttpGet, Authorize(Roles = "clientSpecialist, admin")]
+        [HttpGet, Authorize(Roles = "clientSpecialist,admin")]
         public async Task<ActionResult<IEnumerable<Client>>> GetClients(
             [FromQuery(Name = "firstName")] string? firstName,
             [FromQuery(Name = "lastName")] string? lastName,
@@ -23,7 +23,7 @@ namespace vesta_api.Controllers
             [FromQuery(Name = "birthDate")] string? birthDate
         )
         {
-            var clients = await context.Clients.ToListAsync();
+            var clients = await context.Clients.Where(c => c.IsActive == true).ToListAsync();
 
             if (firstName != null)
             {
@@ -52,33 +52,34 @@ namespace vesta_api.Controllers
             return clients;
         }
 
-        // GET: api/Clients/5
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status204NoContent)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [HttpGet("{id}"), Authorize(Roles = "clientSpecialist, admin")]
+        [HttpGet("{id}"), Authorize(Roles = "clientSpecialist,specialist,admin")]
         public async Task<ActionResult<Client>> GetClient(int id)
         {
             var client = await context.Clients
-                .Include(c => c.AdultsOfClient)!
-                .ThenInclude(a => a.Adult)
-                .Include(c => c.Notes)
-                .Include(c => c.Tests)
+                .Where(c => c.IsActive == true)
+                .Include(c => c.ResponsiblesForClient)!
+                .ThenInclude(r => r.Responsible)
+                .ThenInclude(r => r.Document)
+                .Include(c => c.Notes
+                    .Where(n => n.IsActive == true)
+                )
+                .Include(c => c.Testings
+                    .OrderByDescending(t => t.Datetime)
+                )
+                .Include(c => c.Appointments
+                    .OrderBy(a => a.Datetime)
+                )
+                .Include(c => c.Appointments)
+                .ThenInclude(a => a.Employee)
+                .Include(c => c.Appointments)
+                .ThenInclude(a => a.Service)
+                .Include(c => c.Document)
                 .FirstOrDefaultAsync(c => c.Id == id);
 
-            if (client == null)
-            {
-                return NotFound();
-            }
-
-            return client;
+            return client == null ? NotFound() : client;
         }
 
-        // PUT: api/Clients/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [HttpPut("{id}"), Authorize(Roles = "clientSpecialist, admin")]
+        [HttpPut("{id}"), Authorize(Roles = "clientSpecialist,admin")]
         public async Task<IActionResult> PutClient(int id, Client client)
         {
             if (id != client.Id)
@@ -98,41 +99,33 @@ namespace vesta_api.Controllers
                 {
                     return NotFound();
                 }
-                else
-                {
-                    throw;
-                }
+
+                throw;
             }
 
             return NoContent();
         }
 
-        // POST: api/Clients
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [HttpPost, Authorize(Roles = "clientSpecialist, admin")]
-        public async Task<ActionResult<Client>> PostClient(ClientViewModel client)
+        [HttpPost, Authorize(Roles = "clientSpecialist,admin")]
+        public async Task<ActionResult<Client>> PostClient(CreateClientRequest createClient)
         {
-            var newClient = context.Clients.Add(new Client()
+            var newClient = context.Clients.Add(new Client
             {
-                FirstName = client.FirstName,
-                LastName = client.LastName,
-                Patronymic = client.Patronymic,
-                Gender = client.Gender,
-                BirthDate = client.BirthDate,
-                Address = client.Address,
-                IdentityDocument = client.IdentityDocument,
+                FirstName = createClient.FirstName,
+                LastName = createClient.LastName,
+                Patronymic = createClient.Patronymic,
+                Sex = createClient.Sex,
+                BirthDate = createClient.BirthDate,
+                Address = createClient.Address,
+                DocumentId = createClient.DocumentId,
+                IsActive = true
             });
             await context.SaveChangesAsync();
 
             return CreatedAtAction("GetClient", new { id = newClient.Entity.Id }, newClient.Entity);
         }
 
-        // DELETE: api/Clients/5
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        [HttpDelete("{id}"), Authorize(Roles = "clientSpecialist, admin")]
+        [HttpDelete("{id}"), Authorize(Roles = "clientSpecialist,admin")]
         public async Task<IActionResult> DeleteClient(int id)
         {
             var client = await context.Clients.FindAsync(id);
@@ -141,7 +134,10 @@ namespace vesta_api.Controllers
                 return NotFound();
             }
 
-            context.Clients.Remove(client);
+            client.IsActive = false;
+
+            context.Entry(client).State = EntityState.Modified;
+
             await context.SaveChangesAsync();
 
             return NoContent();

@@ -1,6 +1,6 @@
-﻿namespace vesta_api.Database.Models;
+﻿namespace vesta_api.Database.Models.View.Requests;
 
-public partial class ClientViewModel
+public class CreateClientRequest
 {
     public string FirstName { get; set; } = null!;
 
@@ -8,11 +8,11 @@ public partial class ClientViewModel
 
     public string Patronymic { get; set; } = null!;
 
-    public string Gender { get; set; } = null!;
+    public string Sex { get; set; } = null!;
 
     public DateTime BirthDate { get; set; }
 
     public string Address { get; set; } = null!;
 
-    public string IdentityDocument { get; set; } = null!;
+    public int DocumentId { get; set; }
 }
